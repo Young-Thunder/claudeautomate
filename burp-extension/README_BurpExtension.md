@@ -150,10 +150,14 @@ probe. See the roadmap below.
 
 > **Update:** the CLI (`checklist_auto_scan.py`) now has a working, opt-in
 > active-testing pipeline covering large parts of Phase 3 below (sqlmap,
-> dalfox) plus nuclei/nikto — see **section 11**. It is **not yet wired into
-> the Burp extension UI** (`WPTChecklistScanner.py`) — that's still Jython
-> work and remains open. Everything below this line describes the original
-> plan; section 11 describes what's actually implemented today.
+> dalfox) plus nuclei/nikto — see **section 11**. `WPTChecklistScanner.py`
+> embeds this updated engine (self-extracting via `_ENGINE_SOURCE_B64`, see
+> section 12) so the extension always runs the latest engine build, but its
+> UI has **no controls yet** for selecting phases/`--exploit`/
+> `--i-am-authorized` — until that Swing UI work is done, running a scan from
+> inside Burp only ever runs the baseline ~100 checks, same as before.
+> Everything below this line describes the original plan; section 11
+> describes what's actually implemented today.
 
 This is the plan for closing the gap from ~100 to the ~220–260 items discussed
 earlier, phased so each piece can be added and tested independently:
@@ -186,6 +190,16 @@ this document once built — nothing above is implemented in this v1 file.
 ---
 
 ## 8. Troubleshooting
+
+**`SyntaxError: ('no viable alternative at input ...')` mentioning
+`checklist_auto_scan.py` in the traceback path** — you loaded the wrong
+file. Only **`WPTChecklistScanner.py`** goes into Burp's Extensions →
+Installed → Add dialog. `checklist_auto_scan.py` is pure Python 3 (f-strings
+and all) and Jython (Python 2.7) can never parse it — it isn't meant to be
+loaded into Burp at all; `WPTChecklistScanner.py` decodes its own embedded
+copy of the engine and runs it as a real `python3` subprocess instead (see
+section 12). If the traceback's file path ends in `checklist_auto_scan.py`,
+that's the whole story — point Burp at `WPTChecklistScanner.py` instead.
 
 **Extension fails to load / traceback in the Output tab on load** — almost
 always a Jython path problem. Re-check Extensions → Extension settings →
@@ -346,3 +360,35 @@ Tuning flags: `--crawl-max-pages` / `--crawl-depth` (recon),
 `--max-injection-fields` (inject, default 25 — caps request volume on
 forms/APIs with a lot of fields), `--nuclei-timeout` / `--nikto-timeout` /
 `--sqlmap-timeout` / `--dalfox-timeout`.
+
+---
+
+## 12. How `WPTChecklistScanner.py` bundles the engine (single-file design)
+
+`WPTChecklistScanner.py` is fully self-contained — there is **no separate
+`checklist_auto_scan.py` file to configure a path to any more**. The entire
+engine source is base64-encoded and stored in the `_ENGINE_SOURCE_B64`
+constant near the top of the file. At scan time, `_materialize_engine_script()`
+decodes it and writes it out to a real `.py` file in your configured output
+folder, then runs that with your `python3` interpreter exactly as before —
+nothing about *how* the engine runs changed, only that you no longer need to
+ship/co-locate two files.
+
+The bundled engine's revision is shown as `ENGINE_SOURCE_REV` (first 10 hex
+characters of the source's SHA-256) — visible in the Configuration tab — so
+it's always obvious which engine build is inside a given copy of
+`WPTChecklistScanner.py`. The current bundled revision includes the full
+phased pipeline from section 11, but **the extension's UI does not yet have
+controls for it** — `_run_checklist_auto_scan()` only ever passes
+`--url-file`/`--out`/`--screenshot`/`--cookie`/`--header`/`--only`
+(and `--no-cli-tools` if the checkbox is off), so a scan run from inside Burp
+always runs baseline-only regardless of what the bundled engine supports,
+until the UI is extended to expose `--phases`/`--exploit`/
+`--i-am-authorized`.
+
+**To update the bundled engine after changing `checklist_auto_scan.py`:**
+base64-encode the new file and replace the `_ENGINE_SOURCE_B64` constant
+(and bump `ENGINE_SOURCE_REV` to the new source's SHA-256 prefix). Loading
+`checklist_auto_scan.py` itself into Burp will never work (see
+Troubleshooting, section 8) — it's pure Python 3 and only ever runs as a
+`python3` subprocess that `WPTChecklistScanner.py` launches.
