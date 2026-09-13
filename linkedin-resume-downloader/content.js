@@ -126,7 +126,29 @@
     return sanitizeFilenamePart(withoutAppliedOn) || null;
   }
 
-  function extractName(row, profileLink) {
+  // Last-resort fallback for layouts with neither a <tr>/role="row"
+  // container nor a /in/ profile link nearby (e.g. a virtualized div-based
+  // grid). LinkedIn consistently stacks "Applied on: <date>" right under
+  // the applicant's name, so walk up from the resume element and, at each
+  // level, look for that exact text and take whatever renders immediately
+  // before it. Checking the smallest ancestor first keeps this from
+  // accidentally reaching into a neighboring row's name once one large
+  // enough to contain both lines is found.
+  function findNameNearAppliedOn(resumeEl) {
+    let node = resumeEl;
+    for (let i = 0; i < MAX_ANCESTOR_WALK && node && node !== document.body; i++) {
+      const text = node.innerText || node.textContent || "";
+      const match = text.match(/([^\n]{2,80}?)\s*\n?\s*Applied on:?/i);
+      if (match) {
+        const name = sanitizeFilenamePart(match[1]);
+        if (name) return name;
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function extractName(row, profileLink, resumeEl) {
     if (profileLink) {
       const text = sanitizeFilenamePart(profileLink.textContent);
       if (text && text.length <= 100) return text;
@@ -140,6 +162,8 @@
     }
     const cellName = firstCellName(row);
     if (cellName) return cellName;
+    const nearAppliedOn = findNameNearAppliedOn(resumeEl);
+    if (nearAppliedOn) return nearAppliedOn;
     return "Unknown applicant";
   }
 
@@ -179,7 +203,7 @@
     for (const candidate of candidates) {
       const { row, profileLink } = findApplicantRow(candidate.el);
       const rowId = stamp(row);
-      const name = extractName(row, profileLink);
+      const name = extractName(row, profileLink, candidate.el);
       const profileUrl = profileLink ? profileLink.href.split("?")[0] : null;
 
       if (!rowsById.has(rowId)) {

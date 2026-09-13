@@ -58,13 +58,29 @@ resume`, etc.), anchored to the applicant's profile link
 (e.g. it only opens an in-page viewer), there's no URL to download
 automatically — hence the manual fallback instead of guessing.
 
+## How applicant names are matched
+
+LinkedIn's internal hiring tables don't consistently link a name to a
+public `linkedin.com/in/...` profile, and some views render rows as a
+virtualized list of plain `<div>`s with no `<tr>`/`role="row"` either — so
+name extraction tries several strategies in order: the profile link (if
+present), a heading/strong tag, the row's first table cell, and finally a
+scan up from the resume icon for LinkedIn's own "Applied on: `<date>`"
+wording, taking whatever text renders right before it. If a name still
+comes back as "Unknown applicant", the resume itself still downloads
+correctly — only the filename is affected.
+
 ## Resume links that open a LinkedIn viewer instead of a file
 
 Some LinkedIn applicant tables link the resume icon to an internal route
 (e.g. `.../resume-view/?applicationId=...`) that's rendered client-side —
 fetching it directly returns LinkedIn's app shell, not the PDF. The real
 file is only requested, from `linkedin.com/dms/prv/document/...`, by
-LinkedIn's own JavaScript once the viewer/preview modal actually opens.
+LinkedIn's own JavaScript once the viewer/preview modal actually opens —
+and even that request sometimes returns a small JSON descriptor about the
+document (with a `transcribedDocumentUrl` field pointing at the actual
+file) rather than the file itself, one more hop the resolver follows
+automatically.
 
 To handle this, when the direct link doesn't resolve to a file, the
 extension automatically falls back to: click the resume icon for real

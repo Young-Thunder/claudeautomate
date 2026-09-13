@@ -11,8 +11,32 @@ const BINARY_CONTENT_TYPES = [
 const EMBEDDED_URL_PATTERN =
   /["'](https:\/\/[^"']*(?:\.pdf|\.docx?|\/dms\/(?:prv|document)\/[^"']+)[^"']*)["']/i;
 
+// LinkedIn's document endpoints don't always serve the file directly -- some
+// return a small JSON descriptor about it instead (confirmed shape:
+// {"asset": "...", "transcribedDocumentUrl": "<the real file>",
+// "scanRequiredForDownload": true, "perResolutions": [...]}). Look for the
+// known field first, then fall back to scanning for any string value that
+// looks like the actual document URL, in case the field name ever changes.
+function extractNestedDocumentUrl(data) {
+  if (!data || typeof data !== "object") return null;
+  if (typeof data.transcribedDocumentUrl === "string") return data.transcribedDocumentUrl;
+
+  for (const value of Object.values(data)) {
+    if (typeof value === "string" && /\/dms\/(prv|document)\//i.test(value) && /pdf|docx?/i.test(value)) {
+      return value;
+    }
+  }
+  for (const value of Object.values(data)) {
+    if (value && typeof value === "object") {
+      const nested = extractNestedDocumentUrl(Array.isArray(value) ? value[0] : value);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
 async function resolveDownloadable(url, depth = 0) {
-  if (depth > 2) return { ok: false, error: "Too many redirects while resolving resume link." };
+  if (depth > 3) return { ok: false, error: "Too many redirects while resolving resume link." };
 
   let response;
   try {
@@ -29,6 +53,23 @@ async function resolveDownloadable(url, depth = 0) {
 
   if (BINARY_CONTENT_TYPES.some((re) => re.test(contentType))) {
     return { ok: true, url: response.url, contentType };
+  }
+
+  if (/application\/json/i.test(contentType)) {
+    let data;
+    try {
+      data = await response.json();
+    } catch (e) {
+      return { ok: false, error: "LinkedIn returned an unreadable JSON response for this resume link." };
+    }
+    const nestedUrl = extractNestedDocumentUrl(data);
+    if (nestedUrl) {
+      return resolveDownloadable(nestedUrl, depth + 1);
+    }
+    return {
+      ok: false,
+      error: "LinkedIn returned document metadata this extension couldn't find a file URL inside.",
+    };
   }
 
   if (/text\/html/i.test(contentType)) {
@@ -72,7 +113,7 @@ async function saveDownload(url, filename, folder) {
   }
 }
 
-async function downloadResume({ url, filename, folder }) {
+async function resolveAndSave(url, filename, folder) {
   const resolved = await resolveDownloadable(url);
   if (!resolved.ok) return resolved;
 
@@ -82,6 +123,10 @@ async function downloadResume({ url, filename, folder }) {
   }
 
   return saveDownload(resolved.url, finalName, folder);
+}
+
+async function downloadResume({ url, filename, folder }) {
+  return resolveAndSave(url, filename, folder);
 }
 
 // Fallback for resume links that are a client-rendered LinkedIn viewer route
@@ -137,8 +182,11 @@ async function downloadViaViewer({ tabId, elementId, filename, folder }) {
     };
   }
 
-  const finalName = /\.[a-z0-9]{2,4}$/i.test(filename) ? filename : `${filename}.pdf`;
-  return saveDownload(capturedUrl, finalName, folder);
+  // The captured request is sometimes a JSON descriptor about the document
+  // rather than the document itself (see extractNestedDocumentUrl above) --
+  // route it through the same resolver as the direct-link path instead of
+  // assuming it's already the file.
+  return resolveAndSave(capturedUrl, filename, folder);
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
