@@ -60,14 +60,27 @@ automatically — hence the manual fallback instead of guessing.
 
 ## If it finds 0 resumes
 
-LinkedIn periodically changes its markup. If scanning comes up empty:
+LinkedIn periodically changes its markup, and some views (e.g. the
+icon-only "Hiring Pro" table) show the resume action as a plain icon
+button with no text or label the page exposes — the extension has nothing
+to match in that case. When a scan finds 0 applicants, the status line
+tells you which of two things is going on:
 
-1. Open DevTools on the Applicants page, right-click an applicant's
-   "resume"/"CV" link or button → **Inspect**.
-2. In the popup, open **Advanced** and paste a CSS selector that targets
-   that element (e.g. `a[href*="resume"]`, or something more specific from
-   what you inspected) into **Custom resume link/button selector**.
-3. Re-scan.
+- **"no candidate profile links on this page yet"** — the page (or the
+  inner applicant list panel) probably hadn't finished loading yet when it
+  scanned. Wait a couple seconds and click **Scan applicants** again.
+- **"found N applicant(s) but no resume-like link/button"** — the
+  applicant rows are there, but nothing on the page has "resume"/"cv" in
+  its text, href, or aria-label. This is the icon-only case:
+  1. Right-click the resume/document icon next to an applicant → **Inspect**.
+  2. In the popup, open **Advanced** and paste a CSS selector that targets
+     that element into **Custom resume link/button selector** (e.g.
+     `button[aria-label*="resume" i]`, or something more specific from
+     what you inspected).
+  3. Re-scan.
+     If you're not sure what selector to use, copy the highlighted HTML
+     from DevTools and share it — the detection logic in `content.js` can
+     be extended to match it directly.
 
 ## Permissions
 

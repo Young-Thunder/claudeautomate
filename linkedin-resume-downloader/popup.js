@@ -91,6 +91,7 @@ async function ensureContentScript(tabId) {
 
 function renderResults() {
   resultsEl.innerHTML = "";
+  resultsEl.hidden = applicants.length === 0;
   footer.hidden = applicants.length === 0;
 
   for (const a of applicants) {
@@ -143,6 +144,19 @@ function renderResults() {
   }
 }
 
+function explainZeroResults(diag) {
+  if (!diag) return "0 applicants found.";
+  const counts = `(profile links: ${diag.profileLinksFound}, resume-like elements: ${diag.resumeCandidatesFound}, anchors: ${diag.totalAnchors}, buttons: ${diag.totalButtons})`;
+
+  if (diag.profileLinksFound === 0) {
+    return `0 applicants found — no candidate profile links on this page yet. It may still be loading, or this isn't the Applicants list view. Wait a moment and scan again. ${counts}`;
+  }
+  if (diag.resumeCandidatesFound === 0) {
+    return `Found ${diag.profileLinksFound} applicant(s) but no resume-like link/button (nothing with "resume"/"cv" in its text, href, or aria-label). This page's resume icon likely doesn't expose that — right-click it → Inspect, then paste a matching CSS selector into Advanced → Custom selector. ${counts}`;
+  }
+  return `0 applicants found even though resume-like elements exist — they may not be paired with a profile link nearby. Try Advanced → Custom selector. ${counts}`;
+}
+
 async function scan() {
   const tab = await resolveTargetTab();
   if (!tab || !SUPPORTED_URL.test(tab.url || "")) {
@@ -168,8 +182,13 @@ async function scan() {
 
     applicants = response.applicants;
     jobContext = sanitize(response.pageTitle || "").replace(/\s*\|\s*linkedin.*$/i, "");
-    const foundCount = applicants.filter((a) => !a.needsManualClick).length;
-    scanStatus.textContent = `${applicants.length} applicant(s) found, ${foundCount} resume link(s) resolvable.`;
+
+    if (applicants.length === 0) {
+      scanStatus.textContent = explainZeroResults(response.diagnostics);
+    } else {
+      const foundCount = applicants.filter((a) => !a.needsManualClick).length;
+      scanStatus.textContent = `${applicants.length} applicant(s) found, ${foundCount} resume link(s) resolvable.`;
+    }
     renderResults();
   } catch (e) {
     scanStatus.textContent = "";

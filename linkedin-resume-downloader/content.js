@@ -121,6 +121,19 @@
     return { row: resumeEl.parentElement || resumeEl, profileLink: null };
   }
 
+  function diagnostics(customSelector) {
+    let profileLinks = 0;
+    document.querySelectorAll("a[href]").forEach((a) => {
+      if (PROFILE_HREF_PATTERN.test(a.href)) profileLinks++;
+    });
+    return {
+      totalAnchors: document.querySelectorAll("a").length,
+      totalButtons: document.querySelectorAll("button, [role='button']").length,
+      profileLinksFound: profileLinks,
+      resumeCandidatesFound: findResumeCandidates(document, customSelector).length,
+    };
+  }
+
   function scanApplicants(options = {}) {
     const { customSelector = "" } = options;
     const candidates = findResumeCandidates(document, customSelector);
@@ -203,20 +216,24 @@
     }
 
     if (message.type === "LRD_SCAN") {
+      const applicants = scanApplicants({ customSelector: message.customSelector });
       sendResponse({
         ok: true,
         pageTitle: document.title,
-        applicants: scanApplicants({ customSelector: message.customSelector }),
+        applicants,
+        diagnostics: applicants.length === 0 ? diagnostics(message.customSelector) : null,
       });
       return undefined;
     }
 
     if (message.type === "LRD_AUTO_LOAD_AND_SCAN") {
       autoLoadAll(message.options || {}).then(() => {
+        const applicants = scanApplicants({ customSelector: message.customSelector });
         sendResponse({
           ok: true,
           pageTitle: document.title,
-          applicants: scanApplicants({ customSelector: message.customSelector }),
+          applicants,
+          diagnostics: applicants.length === 0 ? diagnostics(message.customSelector) : null,
         });
       });
       return true; // async response
@@ -242,5 +259,5 @@
   // Exposed only inside this content script's isolated JS world (LinkedIn's
   // own page scripts run in a separate realm and cannot see this), purely so
   // the extension's own devtools console / test harness can call it directly.
-  window.__LRD__ = { scanApplicants, autoLoadAll, sanitizeFilenamePart };
+  window.__LRD__ = { scanApplicants, autoLoadAll, sanitizeFilenamePart, diagnostics };
 })();

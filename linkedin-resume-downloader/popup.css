@@ -23,6 +23,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   width: 360px;
   max-height: 560px;
@@ -68,8 +72,14 @@ header button {
 .row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+#scanStatus {
+  flex-basis: 100%;
+  line-height: 1.5;
 }
 
 .controls {
