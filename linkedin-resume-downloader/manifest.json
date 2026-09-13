@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Resume Downloader for LinkedIn Jobs",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "Bulk-download applicant resumes from the Applicants page of a LinkedIn job you posted.",
   "permissions": ["downloads", "storage", "scripting", "activeTab", "webRequest"],
   "host_permissions": ["https://www.linkedin.com/*"],

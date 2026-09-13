@@ -37,6 +37,10 @@
           Delay between downloads (ms)
           <input type="number" id="delayMs" min="200" step="100" value="800" />
         </label>
+        <label class="field">
+          Page size (applicants per Applicants-table page)
+          <input type="number" id="pageSizeInput" min="1" step="1" value="30" />
+        </label>
       </details>
 
       <ul id="results"></ul>
@@ -50,6 +54,21 @@
       </div>
 
       <div id="progress" class="muted" hidden></div>
+
+      <hr />
+
+      <div id="allPagesSection">
+        <p class="muted small">
+          Has a big applicant list? This downloads every resolvable resume
+          across <strong>all pages</strong>, starting from page 0 —
+          navigating the Applicants list automatically. Ignores the
+          selection above. Can take a long time; best run from the popped
+          -out window (⧉ above) so it isn't interrupted.
+        </p>
+        <button id="allPagesBtn" class="secondary">Download ALL pages</button>
+        <div id="resumePrompt" class="row" hidden></div>
+        <div id="pageProgress" class="muted" hidden></div>
+      </div>
     </div>
 
     <script src="popup.js"></script>

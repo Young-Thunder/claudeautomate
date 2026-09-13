@@ -23,6 +23,13 @@ and click one by one as the job poster.
    link), it's marked **Manual** with a "Reveal" button that scrolls to and
    clicks that element for you, so you can save it yourself from whatever
    LinkedIn opens.
+5. For jobs with more applicants than fit on one page, **Download ALL
+   pages** drives the whole list end to end: it navigates through
+   `start=0, 30, 60, ...` (LinkedIn's own pagination parameter), scanning
+   and downloading every page automatically until two pages in a row come
+   back empty. Progress is saved as it goes, so an interrupted run (closed
+   window, sleeping laptop) can be resumed from where it left off instead
+   of starting over.
 
 ## Install (unpacked)
 
@@ -51,6 +58,30 @@ and click one by one as the job poster.
      moment it loses focus, which would interrupt a long batch; the popped
      -out window keeps running.
 6. For rows tagged **Manual**, click **Reveal** and save that one manually.
+
+## Downloading a large applicant list (hundreds+)
+
+Click **Download ALL pages** instead of scanning/downloading one page at a
+time. It:
+
+1. Confirms the "Applicants per page" number in Advanced matches what you
+   see on LinkedIn (usually 30 — check the URL's `start=` jumps between
+   pages if unsure).
+2. Navigates through `start=0`, `start=30`, `start=60`, ... automatically,
+   scanning and downloading each page in turn.
+3. Stops once two pages in a row come back with no applicants (the natural
+   end of the list), or after 3 pages in a row where nothing downloaded
+   successfully (a systemic failure, not worth grinding through the rest
+   of the list blindly).
+4. Saves progress after every page. If the run gets interrupted — window
+   closed, laptop slept, LinkedIn hiccups — clicking **Download ALL pages**
+   again offers to resume from where it left off instead of re-downloading
+   everything.
+
+This can take a long time for a big list (each applicant needing the
+viewer-modal fallback adds up to ~8s), so run it from the popped-out window
+(⧉) and leave that window open rather than the toolbar popup, which closes
+on its own.
 
 ## Why "Manual" shows up for some applicants
 

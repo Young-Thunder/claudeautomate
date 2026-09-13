@@ -295,6 +295,12 @@
       return undefined;
     }
 
+    if (message.type === "LRD_NAVIGATE") {
+      sendResponse({ ok: true });
+      location.href = message.url;
+      return undefined;
+    }
+
     if (message.type === "LRD_SCAN") {
       const applicants = scanApplicants({ customSelector: message.customSelector });
       sendResponse({

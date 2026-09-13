@@ -15,6 +15,10 @@ const footer = document.getElementById("footer");
 const selectAllChk = document.getElementById("selectAllChk");
 const downloadBtn = document.getElementById("downloadBtn");
 const progressEl = document.getElementById("progress");
+const allPagesBtn = document.getElementById("allPagesBtn");
+const pageSizeInput = document.getElementById("pageSizeInput");
+const pageProgressEl = document.getElementById("pageProgress");
+const resumePrompt = document.getElementById("resumePrompt");
 
 let targetTabId = fixedTabId;
 let applicants = [];
@@ -40,6 +44,7 @@ async function loadSettings() {
     autoScrollChk.checked = lrdSettings.autoScroll !== false;
     customSelectorInput.value = lrdSettings.customSelector || "";
     delayMsInput.value = lrdSettings.delayMs || 800;
+    pageSizeInput.value = lrdSettings.pageSize || 30;
   }
 }
 
@@ -49,6 +54,7 @@ function saveSettings() {
       autoScroll: autoScrollChk.checked,
       customSelector: customSelectorInput.value.trim(),
       delayMs: Number(delayMsInput.value) || 800,
+      pageSize: Number(pageSizeInput.value) || 30,
     },
   });
 }
@@ -214,22 +220,13 @@ async function downloadOneApplicant(applicant, filename) {
   });
 }
 
-async function downloadSelected() {
-  const checkboxes = [...resultsEl.querySelectorAll('input[type="checkbox"]:checked')];
-  const selectedIds = new Set(checkboxes.map((c) => c.dataset.id));
-  const targets = applicants.filter((a) => selectedIds.has(a.id) && a.resumeUrl);
-
-  if (targets.length === 0) {
-    progressEl.hidden = false;
-    progressEl.textContent = "Nothing selected with a resolvable resume link.";
-    return;
-  }
-
-  downloadBtn.disabled = true;
-  scanBtn.disabled = true;
-  progressEl.hidden = false;
-
-  const delayMs = Number(delayMsInput.value) || 800;
+// Sequentially downloads one list of applicants, reporting progress via
+// onProgress(doneCount, failedCount, total, currentApplicant) after each
+// attempt. Stops itself if the same error repeats 3 times in a row (a
+// systemic failure, not a per-applicant one) rather than grinding through
+// everyone. Shared by the single-page "Download selected" and the
+// multi-page "Download all pages" flows below.
+async function downloadApplicantList(targets, { delayMs, onProgress }) {
   let done = 0;
   let failed = 0;
   let lastError = null;
@@ -237,7 +234,7 @@ async function downloadSelected() {
   let stoppedEarly = false;
 
   for (const applicant of targets) {
-    progressEl.textContent = `Downloading ${done + failed + 1} / ${targets.length}: ${applicant.name}`;
+    if (onProgress) onProgress(done, failed, targets.length, applicant);
     const filename = `${sanitize(applicant.name)}_Resume`;
 
     const result = await downloadOneApplicant(applicant, filename);
@@ -256,9 +253,6 @@ async function downloadSelected() {
     }
     renderResults();
 
-    // The same failure on 3 applicants in a row is a systemic issue (a
-    // link format this extension can't resolve), not a per-applicant
-    // problem -- stop instead of repeating it across everyone selected.
     if (sameErrorStreak >= 3) {
       stoppedEarly = true;
       break;
@@ -267,17 +261,248 @@ async function downloadSelected() {
     await sleep(delayMs);
   }
 
-  if (stoppedEarly) {
-    progressEl.textContent =
-      `Stopped after ${done + failed} of ${targets.length}: the last ${sameErrorStreak} resumes all failed ` +
-      `the same way ("${lastError}"), so the rest would too. See the README's "If it finds 0 resumes" section, ` +
-      `or share what happens when you click the resume icon manually so this can be fixed for your page.`;
-  } else {
-    progressEl.textContent = `Done. ${done} downloaded, ${failed} failed.` +
-      (failed ? " Check the tags above for details." : "");
+  return { done, failed, lastError, sameErrorStreak, stoppedEarly, total: targets.length };
+}
+
+function summarizeDownloadResult(result) {
+  if (result.stoppedEarly) {
+    return (
+      `Stopped after ${result.done + result.failed} of ${result.total}: the last ${result.sameErrorStreak} ` +
+      `resumes all failed the same way ("${result.lastError}"), so the rest would too. See the README's ` +
+      `"If it finds 0 resumes" section, or share what happens when you click the resume icon manually so ` +
+      `this can be fixed for your page.`
+    );
   }
+  return `Done. ${result.done} downloaded, ${result.failed} failed.` +
+    (result.failed ? " Check the tags above for details." : "");
+}
+
+async function downloadSelected() {
+  const checkboxes = [...resultsEl.querySelectorAll('input[type="checkbox"]:checked')];
+  const selectedIds = new Set(checkboxes.map((c) => c.dataset.id));
+  const targets = applicants.filter((a) => selectedIds.has(a.id) && a.resumeUrl);
+
+  if (targets.length === 0) {
+    progressEl.hidden = false;
+    progressEl.textContent = "Nothing selected with a resolvable resume link.";
+    return;
+  }
+
+  downloadBtn.disabled = true;
+  scanBtn.disabled = true;
+  allPagesBtn.disabled = true;
+  progressEl.hidden = false;
+
+  const delayMs = Number(delayMsInput.value) || 800;
+  const result = await downloadApplicantList(targets, {
+    delayMs,
+    onProgress: (done, failed, total, applicant) => {
+      progressEl.textContent = `Downloading ${done + failed + 1} / ${total}: ${applicant.name}`;
+    },
+  });
+
+  progressEl.textContent = summarizeDownloadResult(result);
   downloadBtn.disabled = false;
   scanBtn.disabled = false;
+  allPagesBtn.disabled = false;
+}
+
+// --- Multi-page: LinkedIn paginates the Applicants table via a `start=`
+// URL parameter (confirmed: each page load is a fixed-size slice, not an
+// infinite-scroll within one page), so downloading "everything" for a job
+// with hundreds/thousands of applicants means navigating through many
+// page loads, scanning and downloading each before moving to the next.
+
+function getStartParam(url) {
+  try {
+    return Number(new URL(url).searchParams.get("start")) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function withStartParam(url, start) {
+  const u = new URL(url);
+  u.searchParams.set("start", String(start));
+  return u.toString();
+}
+
+function jobStorageKey(url) {
+  try {
+    const jobId = new URL(url).searchParams.get("jobId");
+    return `lrdProgress_${jobId || new URL(url).pathname}`;
+  } catch {
+    return "lrdProgress_unknown";
+  }
+}
+
+async function navigateAndWait(tabId, url, timeoutMs = 15000) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: "LRD_NAVIGATE", url });
+  } catch {
+    // Message channel closes as the page unloads -- expected, not an error.
+  }
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await sleep(600);
+    try {
+      const pong = await chrome.tabs.sendMessage(tabId, { type: "LRD_PING" });
+      if (pong && pong.ok && pong.url && pong.url.includes(`start=${getStartParam(url)}`)) {
+        return true;
+      }
+    } catch {
+      // content script not ready yet on the new page; keep polling
+    }
+  }
+  return false;
+}
+
+// window.confirm()/alert() don't reliably work inside an extension popup
+// context, so this asks in-page instead: shows two buttons and resolves
+// once one is clicked.
+function askResumeOrRestart(savedProgress) {
+  return new Promise((resolve) => {
+    resumePrompt.innerHTML = "";
+    resumePrompt.hidden = false;
+
+    const text = document.createElement("p");
+    text.className = "muted";
+    text.textContent =
+      `Found earlier progress for this job: ${savedProgress.totalDownloaded} resume(s) downloaded, ` +
+      `stopped before start=${savedProgress.nextStart}.`;
+
+    const resumeBtn = document.createElement("button");
+    resumeBtn.textContent = `Resume from start=${savedProgress.nextStart}`;
+    const restartBtn = document.createElement("button");
+    restartBtn.className = "secondary";
+    restartBtn.textContent = "Start over from page 0";
+
+    resumeBtn.addEventListener("click", () => {
+      resumePrompt.hidden = true;
+      resolve(savedProgress.nextStart);
+    });
+    restartBtn.addEventListener("click", () => {
+      resumePrompt.hidden = true;
+      resolve(0);
+    });
+
+    resumePrompt.appendChild(text);
+    resumePrompt.appendChild(resumeBtn);
+    resumePrompt.appendChild(restartBtn);
+  });
+}
+
+async function downloadAllPages() {
+  const tab = await resolveTargetTab();
+  if (!tab || !SUPPORTED_URL.test(tab.url || "")) {
+    setStatus("Open a LinkedIn job's Applicants page (linkedin.com/hiring/... ) in this tab, then reopen.", false);
+    return;
+  }
+
+  const pageSize = Number(pageSizeInput.value) || 30;
+  const storageKey = jobStorageKey(tab.url);
+  const { [storageKey]: savedProgress } = await chrome.storage.local.get(storageKey);
+
+  let startAt = 0;
+  if (savedProgress && savedProgress.nextStart > 0) {
+    startAt = await askResumeOrRestart(savedProgress);
+  }
+
+  downloadBtn.disabled = true;
+  scanBtn.disabled = true;
+  allPagesBtn.disabled = true;
+  progressEl.hidden = false;
+  pageProgressEl.hidden = false;
+
+  const delayMs = Number(delayMsInput.value) || 800;
+  const customSelector = customSelectorInput.value.trim();
+  const MAX_PAGES = 400; // safety cap: 400 * 30 = 12,000 applicants
+  let consecutiveEmptyPages = 0;
+  let consecutiveFailedPages = 0;
+  let totalDownloaded = 0;
+  let totalFailed = 0;
+  let pagesProcessed = 0;
+  let start = startAt;
+  let outcome = "end"; // 'end' | 'load-failed' | 'page-failures' | 'max-pages'
+
+  for (; pagesProcessed < MAX_PAGES; start += pageSize, pagesProcessed++) {
+    pageProgressEl.textContent = `Page starting at ${start} (${totalDownloaded} downloaded so far, ${pagesProcessed} page(s) done)…`;
+
+    const pageUrl = withStartParam(tab.url, start);
+    const ready = await navigateAndWait(tab.id, pageUrl);
+    if (!ready) {
+      outcome = "load-failed";
+      break;
+    }
+
+    const messageType = autoScrollChk.checked ? "LRD_AUTO_LOAD_AND_SCAN" : "LRD_SCAN";
+    let response;
+    try {
+      response = await chrome.tabs.sendMessage(tab.id, { type: messageType, customSelector });
+    } catch (e) {
+      response = null;
+    }
+
+    const pageApplicants = (response && response.ok && response.applicants) || [];
+    applicants = pageApplicants;
+    renderResults();
+
+    if (pageApplicants.length === 0) {
+      consecutiveEmptyPages++;
+      if (consecutiveEmptyPages >= 2) {
+        outcome = "end";
+        break;
+      }
+      continue;
+    }
+    consecutiveEmptyPages = 0;
+
+    const targets = pageApplicants.filter((a) => a.resumeUrl);
+    const result = await downloadApplicantList(targets, {
+      delayMs,
+      onProgress: (done, failed, total, applicant) => {
+        progressEl.textContent = `Page start=${start}: downloading ${done + failed + 1} / ${total}: ${applicant.name}`;
+      },
+    });
+
+    totalDownloaded += result.done;
+    totalFailed += result.failed;
+    consecutiveFailedPages = result.done === 0 && targets.length > 0 ? consecutiveFailedPages + 1 : 0;
+
+    await chrome.storage.local.set({
+      [storageKey]: { nextStart: start + pageSize, totalDownloaded, updatedAt: Date.now() },
+    });
+
+    if (consecutiveFailedPages >= 3) {
+      outcome = "page-failures";
+      break;
+    }
+  }
+
+  if (pagesProcessed >= MAX_PAGES) outcome = "max-pages";
+
+  const messages = {
+    end: `Done. ${totalDownloaded} downloaded across ${pagesProcessed} page(s), ${totalFailed} failed. Reached the end of the list.`,
+    "load-failed": `Could not load the page at start=${start} in time. Stopped here -- progress is saved; re-run "Download all pages" to resume.`,
+    "page-failures": `Stopped: 3 pages in a row downloaded nothing successfully (last page start=${start}). Progress is saved -- re-run to resume from start=${start + pageSize}.`,
+    "max-pages": `Stopped at the ${MAX_PAGES}-page safety limit (${totalDownloaded} downloaded). Re-run to continue from where this left off.`,
+  };
+  pageProgressEl.textContent = messages[outcome];
+
+  if (outcome === "end") {
+    await chrome.storage.local.remove(storageKey);
+  } else if (outcome !== "page-failures") {
+    // page-failures already persisted its own resume point above; the
+    // other non-"end" outcomes need it saved now that the loop has exited.
+    await chrome.storage.local.set({
+      [storageKey]: { nextStart: start, totalDownloaded, updatedAt: Date.now() },
+    });
+  }
+
+  downloadBtn.disabled = false;
+  scanBtn.disabled = false;
+  allPagesBtn.disabled = false;
 }
 
 popOutBtn.addEventListener("click", async () => {
@@ -294,12 +519,13 @@ popOutBtn.addEventListener("click", async () => {
 
 scanBtn.addEventListener("click", scan);
 downloadBtn.addEventListener("click", downloadSelected);
+allPagesBtn.addEventListener("click", downloadAllPages);
 selectAllChk.addEventListener("change", () => {
   resultsEl.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach((c) => {
     c.checked = selectAllChk.checked;
   });
 });
-[autoScrollChk, customSelectorInput, delayMsInput].forEach((el) =>
+[autoScrollChk, customSelectorInput, delayMsInput, pageSizeInput].forEach((el) =>
   el.addEventListener("change", saveSettings)
 );
 
