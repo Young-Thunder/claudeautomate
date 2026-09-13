@@ -209,6 +209,25 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  // Closes a resume preview modal after we've captured its document URL, so
+  // it doesn't sit over the table and swallow the next applicant's click.
+  function closeOpenModal() {
+    const dialog = document.querySelector('[role="dialog"], .artdeco-modal');
+    if (dialog) {
+      const closeBtn = dialog.querySelector(
+        'button[aria-label*="dismiss" i], button[aria-label*="close" i]'
+      );
+      if (closeBtn) {
+        closeBtn.click();
+        return true;
+      }
+    }
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, which: 27, bubbles: true })
+    );
+    return false;
+  }
+
   function findLoadMoreControl() {
     const buttons = document.querySelectorAll("button, a[role='button']");
     const pattern = /^(show more|see more|load more|next)\b/i;
@@ -290,11 +309,16 @@
       return undefined;
     }
 
+    if (message.type === "LRD_CLOSE_MODAL") {
+      sendResponse({ ok: closeOpenModal() });
+      return undefined;
+    }
+
     return undefined;
   });
 
   // Exposed only inside this content script's isolated JS world (LinkedIn's
   // own page scripts run in a separate realm and cannot see this), purely so
   // the extension's own devtools console / test harness can call it directly.
-  window.__LRD__ = { scanApplicants, autoLoadAll, sanitizeFilenamePart, diagnostics };
+  window.__LRD__ = { scanApplicants, autoLoadAll, sanitizeFilenamePart, diagnostics, closeOpenModal };
 })();

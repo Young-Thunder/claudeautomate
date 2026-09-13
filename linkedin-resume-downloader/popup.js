@@ -198,6 +198,22 @@ async function scan() {
   }
 }
 
+async function downloadOneApplicant(applicant, filename) {
+  const direct = await chrome.runtime.sendMessage({
+    type: "LRD_DOWNLOAD_ONE",
+    payload: { url: applicant.resumeUrl, filename, folder: jobContext },
+  });
+  if (direct && direct.ok) return direct;
+  if (applicant.needsManualClick || !applicant.resumeElementId) return direct;
+
+  // The direct link was a client-rendered LinkedIn viewer route rather than
+  // a file: open it for real and capture the document request it makes.
+  return chrome.runtime.sendMessage({
+    type: "LRD_DOWNLOAD_VIA_VIEWER",
+    payload: { tabId: targetTabId, elementId: applicant.resumeElementId, filename, folder: jobContext },
+  });
+}
+
 async function downloadSelected() {
   const checkboxes = [...resultsEl.querySelectorAll('input[type="checkbox"]:checked')];
   const selectedIds = new Set(checkboxes.map((c) => c.dataset.id));
@@ -224,10 +240,7 @@ async function downloadSelected() {
     progressEl.textContent = `Downloading ${done + failed + 1} / ${targets.length}: ${applicant.name}`;
     const filename = `${sanitize(applicant.name)}_Resume`;
 
-    const result = await chrome.runtime.sendMessage({
-      type: "LRD_DOWNLOAD_ONE",
-      payload: { url: applicant.resumeUrl, filename, folder: jobContext },
-    });
+    const result = await downloadOneApplicant(applicant, filename);
 
     if (result && result.ok) {
       applicant.status = "done";

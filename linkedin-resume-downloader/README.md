@@ -58,22 +58,26 @@ resume`, etc.), anchored to the applicant's profile link
 (e.g. it only opens an in-page viewer), there's no URL to download
 automatically — hence the manual fallback instead of guessing.
 
-## "This resume link opens a LinkedIn viewer page..." errors
+## Resume links that open a LinkedIn viewer instead of a file
 
 Some LinkedIn applicant tables link the resume icon to an internal route
 (e.g. `.../resume-view/?applicationId=...`) that's rendered client-side —
-fetching it returns LinkedIn's app shell, not the PDF, and the real file is
-requested by LinkedIn's own JavaScript after the page loads. This extension
-fetches the link directly and can't run that JavaScript, so it can't
-resolve these automatically yet. If the same error repeats 3 times in a
-row, the batch stops itself instead of failing through everyone selected.
+fetching it directly returns LinkedIn's app shell, not the PDF. The real
+file is only requested, from `linkedin.com/dms/prv/document/...`, by
+LinkedIn's own JavaScript once the viewer/preview modal actually opens.
 
-If you hit this: click that resume icon **yourself** (not through the
-extension) and note what happens — a new tab opening with the PDF, an
-in-page preview panel, an immediate download — and, ideally, the URL of
-whatever tab/preview it opens. That tells us which resolution strategy to
-add (e.g. opening it in a background tab and reading the rendered result,
-rather than a plain fetch).
+To handle this, when the direct link doesn't resolve to a file, the
+extension automatically falls back to: click the resume icon for real
+(opening LinkedIn's own preview modal), watch for the `dms/prv/document`
+network request that modal makes to load the file, download straight from
+that captured URL, then close the modal so it doesn't block the next
+applicant's row. This means a resume that needs this fallback takes a bit
+longer per applicant (up to ~8s if the viewer is slow to load) — for a
+large batch, expect it to take noticeably longer than the delay setting
+alone would suggest. If the same failure still repeats 3 times in a row
+(e.g. the viewer's close button isn't found by the selectors this looks
+for, so it can't proceed cleanly), the batch stops itself rather than
+grinding through everyone selected.
 
 ## If it finds 0 resumes
 
@@ -107,6 +111,10 @@ tells you which of two things is going on:
   scanner into the Applicants tab and to fetch a resume link's final file
   URL when it points at an HTML viewer instead of the raw file, so the
   right file extension gets used.
+- `webRequest` — to observe (never modify or block) the one network request
+  LinkedIn's own viewer makes for the real file, for the fallback path
+  above. It only reads request URLs matching `linkedin.com/dms/prv/document/*`
+  and never reads request/response bodies.
 
 No data leaves your browser; nothing is sent anywhere except LinkedIn itself
 (to fetch/download resumes you already have access to).
@@ -129,8 +137,16 @@ check LinkedIn's current terms before relying on it heavily.
   double check the first run and adjust the custom selector if needed — see
   above.
 - One job's Applicants page at a time.
-- Can't yet resolve resume links that are client-side-rendered viewer
-  routes rather than a direct file/redirect — see above.
+- The viewer-modal fallback's "close the modal afterward" step looks for a
+  button labeled roughly "dismiss"/"close"; if LinkedIn's actual close
+  button uses different wording, it falls back to pressing Escape, which
+  may not always register. Watch the first few downloads in a batch to
+  confirm the modal is actually closing between applicants.
+- Chrome can terminate an idle extension service worker after ~30s; the
+  click-and-capture fallback is normally well under that per applicant, but
+  under real-world network conditions a very slow-loading viewer could
+  still time out mid-capture. A failure here shows up as a normal per
+  -applicant error rather than crashing the batch.
 
 ## Files
 
