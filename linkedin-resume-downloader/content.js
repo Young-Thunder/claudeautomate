@@ -24,7 +24,7 @@
   const RESUME_TEXT_PATTERN = /\b(?:(?:download|view|see|open)\s*)?(?:resume|cv)s?\b/i;
   const PROFILE_HREF_PATTERN = /linkedin\.com\/in\/[^/?#]+/i;
 
-  const MAX_ANCESTOR_WALK = 8;
+  const MAX_ANCESTOR_WALK = 14;
   const STAMP_ATTR = "data-lrd-id";
   let stampCounter = 0;
 
@@ -96,6 +96,36 @@
     return null;
   }
 
+  // In a plain <table> or ARIA grid layout, the table row is a far more
+  // reliable "this is one applicant" boundary than hunting for a profile
+  // link, since LinkedIn's internal hiring tools don't always link the name
+  // to a public /in/ profile URL.
+  function findRowContainer(resumeEl) {
+    let node = resumeEl;
+    for (let i = 0; i < MAX_ANCESTOR_WALK && node && node !== document.body; i++) {
+      if (node.matches && (node.matches("tr") || node.getAttribute("role") === "row")) {
+        return node;
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function firstCellName(row) {
+    const cell = row.querySelector("td, th, [role='cell'], [role='gridcell']");
+    if (!cell) return null;
+    // innerText (not textContent) inserts line breaks between block-level
+    // children the way they're visually stacked, so a name cell that also
+    // contains "Applied on: ..." underneath usually yields the name as line
+    // one. That's not guaranteed (inline siblings without a block boundary
+    // won't split), so also strip a trailing "Applied on ..." explicitly --
+    // it's LinkedIn's own applicant-table wording, visible right under the
+    // name in every row.
+    const firstLine = (cell.innerText || cell.textContent || "").split("\n")[0];
+    const withoutAppliedOn = firstLine.replace(/\s*Applied on:?.*/i, "");
+    return sanitizeFilenamePart(withoutAppliedOn) || null;
+  }
+
   function extractName(row, profileLink) {
     if (profileLink) {
       const text = sanitizeFilenamePart(profileLink.textContent);
@@ -108,10 +138,17 @@
       const text = sanitizeFilenamePart(heading.textContent);
       if (text) return text;
     }
+    const cellName = firstCellName(row);
+    if (cellName) return cellName;
     return "Unknown applicant";
   }
 
   function findApplicantRow(resumeEl) {
+    const tableRow = findRowContainer(resumeEl);
+    if (tableRow) {
+      return { row: tableRow, profileLink: findProfileLink(tableRow) };
+    }
+
     let node = resumeEl;
     for (let i = 0; i < MAX_ANCESTOR_WALK && node && node !== document.body; i++) {
       const profileLink = findProfileLink(node);

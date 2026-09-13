@@ -216,6 +216,9 @@ async function downloadSelected() {
   const delayMs = Number(delayMsInput.value) || 800;
   let done = 0;
   let failed = 0;
+  let lastError = null;
+  let sameErrorStreak = 0;
+  let stoppedEarly = false;
 
   for (const applicant of targets) {
     progressEl.textContent = `Downloading ${done + failed + 1} / ${targets.length}: ${applicant.name}`;
@@ -229,17 +232,37 @@ async function downloadSelected() {
     if (result && result.ok) {
       applicant.status = "done";
       done++;
+      sameErrorStreak = 0;
     } else {
+      const message = (result && result.error) || "Failed";
       applicant.status = "error";
-      applicant.statusMessage = (result && result.error) || "Failed";
+      applicant.statusMessage = message;
       failed++;
+      sameErrorStreak = message === lastError ? sameErrorStreak + 1 : 1;
+      lastError = message;
     }
     renderResults();
+
+    // The same failure on 3 applicants in a row is a systemic issue (a
+    // link format this extension can't resolve), not a per-applicant
+    // problem -- stop instead of repeating it across everyone selected.
+    if (sameErrorStreak >= 3) {
+      stoppedEarly = true;
+      break;
+    }
+
     await sleep(delayMs);
   }
 
-  progressEl.textContent = `Done. ${done} downloaded, ${failed} failed.` +
-    (failed ? " Check the tags above for details." : "");
+  if (stoppedEarly) {
+    progressEl.textContent =
+      `Stopped after ${done + failed} of ${targets.length}: the last ${sameErrorStreak} resumes all failed ` +
+      `the same way ("${lastError}"), so the rest would too. See the README's "If it finds 0 resumes" section, ` +
+      `or share what happens when you click the resume icon manually so this can be fixed for your page.`;
+  } else {
+    progressEl.textContent = `Done. ${done} downloaded, ${failed} failed.` +
+      (failed ? " Check the tags above for details." : "");
+  }
   downloadBtn.disabled = false;
   scanBtn.disabled = false;
 }

@@ -58,6 +58,23 @@ resume`, etc.), anchored to the applicant's profile link
 (e.g. it only opens an in-page viewer), there's no URL to download
 automatically — hence the manual fallback instead of guessing.
 
+## "This resume link opens a LinkedIn viewer page..." errors
+
+Some LinkedIn applicant tables link the resume icon to an internal route
+(e.g. `.../resume-view/?applicationId=...`) that's rendered client-side —
+fetching it returns LinkedIn's app shell, not the PDF, and the real file is
+requested by LinkedIn's own JavaScript after the page loads. This extension
+fetches the link directly and can't run that JavaScript, so it can't
+resolve these automatically yet. If the same error repeats 3 times in a
+row, the batch stops itself instead of failing through everyone selected.
+
+If you hit this: click that resume icon **yourself** (not through the
+extension) and note what happens — a new tab opening with the PDF, an
+in-page preview panel, an immediate download — and, ideally, the URL of
+whatever tab/preview it opens. That tells us which resolution strategy to
+add (e.g. opening it in a background tab and reading the rendered result,
+rather than a plain fetch).
+
 ## If it finds 0 resumes
 
 LinkedIn periodically changes its markup, and some views (e.g. the
@@ -112,6 +129,8 @@ check LinkedIn's current terms before relying on it heavily.
   double check the first run and adjust the custom selector if needed — see
   above.
 - One job's Applicants page at a time.
+- Can't yet resolve resume links that are client-side-rendered viewer
+  routes rather than a direct file/redirect — see above.
 
 ## Files
 
