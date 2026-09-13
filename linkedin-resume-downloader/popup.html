@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Resume Downloader for LinkedIn Jobs</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img src="icons/icon48.png" alt="" width="24" height="24" />
+      <h1>Resume Downloader</h1>
+      <button id="popOutBtn" title="Open in its own window so it keeps running">⧉</button>
+    </header>
+
+    <div id="statusBox" class="status"></div>
+
+    <div id="mainPanel" hidden>
+      <div class="row controls">
+        <label class="checkbox">
+          <input type="checkbox" id="autoScrollChk" checked />
+          Load all applicants first (scrolls/paginates)
+        </label>
+      </div>
+
+      <div class="row controls">
+        <button id="scanBtn">Scan applicants</button>
+        <span id="scanStatus" class="muted"></span>
+      </div>
+
+      <details id="advanced">
+        <summary>Advanced</summary>
+        <label class="field">
+          Custom resume link/button selector (optional)
+          <input type="text" id="customSelector" placeholder="e.g. a.resume-download-link" />
+        </label>
+        <label class="field">
+          Delay between downloads (ms)
+          <input type="number" id="delayMs" min="200" step="100" value="800" />
+        </label>
+      </details>
+
+      <ul id="results"></ul>
+
+      <div class="row footer" id="footer" hidden>
+        <label class="checkbox">
+          <input type="checkbox" id="selectAllChk" checked />
+          Select all
+        </label>
+        <button id="downloadBtn">Download selected</button>
+      </div>
+
+      <div id="progress" class="muted" hidden></div>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

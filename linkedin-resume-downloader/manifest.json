@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Resume Downloader for LinkedIn Jobs",
+  "version": "1.0.0",
+  "description": "Bulk-download applicant resumes from the Applicants page of a LinkedIn job you posted.",
+  "permissions": ["downloads", "storage", "scripting", "activeTab"],
+  "host_permissions": ["https://www.linkedin.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.linkedin.com/hiring/*",
+        "https://www.linkedin.com/talent/*"
+      ],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Resume Downloader for LinkedIn Jobs",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
