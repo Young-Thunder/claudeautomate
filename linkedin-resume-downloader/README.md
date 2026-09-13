@@ -34,6 +34,11 @@ and click one by one as the job poster.
 
 ## Usage
 
+0. One-time check: in `chrome://settings/downloads`, make sure **"Ask
+   where to save each file before downloading"** is turned **off**. If it's
+   on, Chrome shows its native Save-As dialog for every single download —
+   including these — and the batch will wait on a manual click per
+   applicant instead of running straight through.
 1. Go to your job posting's Applicants page on LinkedIn
    (`https://www.linkedin.com/hiring/jobs/<id>/applicants/...`).
 2. Click the extension icon.
